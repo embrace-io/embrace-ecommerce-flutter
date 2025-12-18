@@ -25,7 +25,7 @@ android {
 
     defaultConfig {
         applicationId "io.embrace.embrace_ecommerce_flutter"
-        minSdkVersion 21
+        minSdkVersion 26
         targetSdkVersion flutter.targetSdkVersion
         versionCode 1
         versionName "1.0.0"
