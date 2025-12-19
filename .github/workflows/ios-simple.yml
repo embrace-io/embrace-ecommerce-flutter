@@ -62,18 +62,34 @@ jobs:
           # Install on simulator
           xcrun simctl install ${{ steps.sim.outputs.udid }} build/ios/iphonesimulator/Runner.app
 
-          # Launch app
+          # First launch - creates session
+          echo "=== First app launch (creates session) ==="
           xcrun simctl launch ${{ steps.sim.outputs.udid }} io.embrace.embraceEcommerceFlutter
+          echo "App launched, running for 20 seconds..."
+          sleep 20
 
-          # Let it run for 30 seconds to generate telemetry
-          echo "App launched, waiting 30 seconds for telemetry..."
+          # Terminate first session
+          xcrun simctl terminate ${{ steps.sim.outputs.udid }} io.embrace.embraceEcommerceFlutter || true
+          echo "First session ended, waiting..."
+          sleep 5
+
+          # Second launch - uploads previous session
+          echo "=== Second app launch (uploads previous session) ==="
+          xcrun simctl launch ${{ steps.sim.outputs.udid }} io.embrace.embraceEcommerceFlutter
+          echo "App launched again, waiting 30 seconds for upload..."
           sleep 30
 
-          # Terminate app (triggers session end)
+          # Terminate second session
           xcrun simctl terminate ${{ steps.sim.outputs.udid }} io.embrace.embraceEcommerceFlutter || true
-
-          echo "App terminated, waiting for upload..."
+          echo "Second session ended, waiting for final upload..."
           sleep 10
+
+          # Third launch to upload second session
+          echo "=== Third app launch (uploads second session) ==="
+          xcrun simctl launch ${{ steps.sim.outputs.udid }} io.embrace.embraceEcommerceFlutter
+          sleep 15
+          xcrun simctl terminate ${{ steps.sim.outputs.udid }} io.embrace.embraceEcommerceFlutter || true
+          sleep 5
 
       - name: Shutdown simulator
         if: always()
