@@ -1,0 +1,79 @@
+name: iOS Simple Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-ios:
+    name: iOS Quick Test
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.27.4"
+          cache: true
+
+      - name: Configure Embrace SDK
+        run: |
+          cat > ios/Runner/EmbraceConfig.plist << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>AppId</key>
+              <string>${{ vars.EMBRACE_APP_ID_IOS }}</string>
+          </dict>
+          </plist>
+          EOF
+          echo "Configured Embrace with App ID: ${{ vars.EMBRACE_APP_ID_IOS }}"
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Check available Xcode
+        run: |
+          ls /Applications | grep Xcode
+          xcodebuild -version
+
+      - name: List simulators
+        run: xcrun simctl list devices available | grep -E "iPhone (14|15|16)" | head -10
+
+      - name: Boot simulator
+        id: sim
+        run: |
+          UDID=$(xcrun simctl list devices available | grep "iPhone 15" | head -1 | grep -oE '[A-F0-9-]{36}')
+          echo "UDID=$UDID"
+          echo "udid=$UDID" >> $GITHUB_OUTPUT
+          xcrun simctl boot "$UDID" || true
+          sleep 5
+
+      - name: Build and launch app
+        run: |
+          # Build for simulator
+          flutter build ios --debug --simulator --no-codesign
+
+          # Install on simulator
+          xcrun simctl install ${{ steps.sim.outputs.udid }} build/ios/iphonesimulator/Runner.app
+
+          # Launch app
+          xcrun simctl launch ${{ steps.sim.outputs.udid }} io.embrace.embraceEcommerceFlutter
+
+          # Let it run for 30 seconds to generate telemetry
+          echo "App launched, waiting 30 seconds for telemetry..."
+          sleep 30
+
+          # Terminate app (triggers session end)
+          xcrun simctl terminate ${{ steps.sim.outputs.udid }} io.embrace.embraceEcommerceFlutter || true
+
+          echo "App terminated, waiting for upload..."
+          sleep 10
+
+      - name: Shutdown simulator
+        if: always()
+        run: xcrun simctl shutdown ${{ steps.sim.outputs.udid }} || true
