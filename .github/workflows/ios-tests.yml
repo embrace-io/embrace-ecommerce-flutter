@@ -1,0 +1,106 @@
+name: iOS Tests
+
+on:
+  schedule:
+    - cron: '0 */2 * * *'
+  workflow_dispatch:
+
+env:
+  FLUTTER_VERSION: "3.24.0"
+
+concurrency:
+  group: ios-tests
+  cancel-in-progress: true
+
+jobs:
+  test-ios:
+    name: iOS Integration Tests
+    runs-on: macos-14
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Configure Embrace SDK
+        run: |
+          cat > ios/Runner/EmbraceConfig.plist << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>AppId</key>
+              <string>${{ vars.EMBRACE_APP_ID_IOS }}</string>
+          </dict>
+          </plist>
+          EOF
+          echo "Configured Embrace with App ID"
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Install CocoaPods
+        run: |
+          cd ios
+          pod install --repo-update
+
+      - name: List available Xcode versions
+        run: ls -la /Applications/ | grep Xcode
+
+      - name: Select Xcode 15.4
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
+
+      - name: List available simulators
+        run: xcrun simctl list devices available | grep iPhone
+
+      - name: Boot iPhone 15 Simulator
+        id: simulator
+        run: |
+          # Find iPhone 15 simulator
+          SIMULATOR_UDID=$(xcrun simctl list devices available | grep "iPhone 15" | grep -v "Plus\|Pro" | head -1 | grep -oE '[A-F0-9-]{36}')
+
+          if [ -z "$SIMULATOR_UDID" ]; then
+            echo "iPhone 15 not found, trying iPhone 14..."
+            SIMULATOR_UDID=$(xcrun simctl list devices available | grep "iPhone 14" | grep -v "Plus\|Pro" | head -1 | grep -oE '[A-F0-9-]{36}')
+          fi
+
+          if [ -z "$SIMULATOR_UDID" ]; then
+            echo "No suitable iPhone found!"
+            xcrun simctl list devices available
+            exit 1
+          fi
+
+          echo "SIMULATOR_UDID=$SIMULATOR_UDID" >> $GITHUB_OUTPUT
+          echo "Booting simulator: $SIMULATOR_UDID"
+          xcrun simctl boot "$SIMULATOR_UDID" || true
+
+          # Wait for simulator to be ready
+          sleep 10
+
+      - name: Run browse flow test
+        run: |
+          flutter test integration_test/browse_flow_test.dart \
+            --dart-define=RUN_SOURCE=scheduled-ios \
+            -d ${{ steps.simulator.outputs.SIMULATOR_UDID }}
+
+      - name: Run auth flow test
+        run: |
+          flutter test integration_test/auth_flow_test.dart \
+            --dart-define=RUN_SOURCE=scheduled-ios \
+            -d ${{ steps.simulator.outputs.SIMULATOR_UDID }}
+
+      - name: Run cart flow test
+        run: |
+          flutter test integration_test/cart_flow_test.dart \
+            --dart-define=RUN_SOURCE=scheduled-ios \
+            -d ${{ steps.simulator.outputs.SIMULATOR_UDID }}
+
+      - name: Shutdown simulator
+        if: always()
+        run: xcrun simctl shutdown ${{ steps.simulator.outputs.SIMULATOR_UDID }} || true
