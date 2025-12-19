@@ -70,7 +70,7 @@ jobs:
           ./gradlew app:assembleDebugAndroidTest
 
       - name: Upload Android artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: android-build-artifacts
           path: |
@@ -144,7 +144,7 @@ jobs:
           flutter build ios --debug --simulator --no-codesign
 
       - name: Upload iOS artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ios-build-artifacts
           path: |
